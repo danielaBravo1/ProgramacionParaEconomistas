@@ -1,0 +1,282 @@
+---
+title: "Clase 1: Ejercicios"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = FALSE, messages = FALSE, comment = "##")
+```
+
+Completa los chunks de código. Cuando termines, haz **Knit** y verifica que todo corra sin errores antes de entregar.
+
+---
+
+# Parte 1 — R básico
+
+**Ejercicio 1.** Calcula lo siguiente. Intenta predecir el resultado antes de correr cada línea:
+
+```{r}
+# a) Raíz cuadrada de 225 más 3 elevado a la 4
+sqrt(225) + 3^4
+
+# b) Residuo de dividir 1000 entre 7 (operador %%)
+1000 %% 7
+
+# c) e elevado a la 2
+exp(2)
+
+```
+
+**Ejercicio 2.** México tuvo en 2023 un PIB nominal de 29,700 miles de millones de pesos y un deflactor del PIB de 148.3 (base 2013 = 100). Guarda cada valor en un objeto con nombre descriptivo y calcula el PIB real.
+
+```{r}
+PIB_nominal <- 29700 #Miles de millones de pesos
+deflactorPIB <- 148.3 #Base 2013 =100
+PIB_real <- PIB_nominal/ deflactorPIB * 100
+print(PIB_real)
+
+```
+
+**Ejercicio 3.** Sin correr el código, escribe en un comentario si cada expresión devuelve `TRUE` o `FALSE`. Luego verifica:
+
+```{r}
+
+10 == 10 #TRUE
+10 != 10 #FALSE
+(5 > 3) & (8 < 5) #FALSE
+(5 > 3) | (8 < 5) #TRUE
+!(3 > 1) #FALSE
+
+```
+
+---
+
+# Parte 2 — Tipos de datos y vectores
+
+**Ejercicio 4.** Para cada objeto, escribe en un comentario qué tipo crees que es *antes* de verificarlo con `class()`. Al final explica por qué `d` no es numérico aunque parece serlo:
+
+```{r}
+a <- 19500.75 #numérico
+b <- "tasa de desempleo" #character
+c <- FALSE #boleano/lógico
+d <- "2.8" #character, ya que a pesar de ser visto como numérico, todos los que estan entre comillas, es un character
+
+# Tu código aquí
+class(a)
+class(b)
+class(c)
+class (d)
+
+```
+
+---
+
+**Ejercicio 5.** Tenemos datos de desempleo para 20 países de América Latina y el Caribe. Usa los datos generados para contestar las preguntas. 
+
+```{r}
+set.seed(42)
+paises <- c("México", "Brasil", "Argentina", "Colombia", "Chile", "Perú",
+            "Venezuela", "Ecuador", "Bolivia", "Paraguay", "Uruguay",
+            "Costa Rica", "Panamá", "Guatemala", "Honduras", "El Salvador",
+            "Nicaragua", "Cuba", "República Dominicana", "Jamaica")
+
+desempleo <- round(runif(n = 20, min = 2.0, max = 15.0), 1)
+```
+
+a) ¿Cuál es la tasa promedio del grupo?
+
+```{r}
+mean(desempleo)
+```
+
+b) ¿Cuántos países tienen desempleo mayor al promedio? (pista: suma un vector lógico)
+
+```{r}
+sum(desempleo > mean(desempleo))
+```
+
+c) ¿Qué países tienen desempleo menor a 7%?
+
+```{r}
+paises[desempleo < 7]
+```
+
+d) Crea un vector lógico llamado `alto_desempleo` que sea `TRUE` para países con desempleo mayor a 10%
+
+```{r}
+alto_desempleo <- desempleo > 10
+alto_desempleo
+```
+
+---
+
+# Parte 3 — Data frames
+
+**Ejercicio 6.** Tenemos un panel de 30 países con tres variables macroeconómicas simuladas. 
+
+```{r}
+set.seed(7)
+
+n <- 30
+
+paises_macro <- c("México", "Brasil", "Argentina", "Colombia", "Chile", "Perú",
+                  "Venezuela", "Ecuador", "Bolivia", "Paraguay", "Uruguay",
+                  "Costa Rica", "Panamá", "Guatemala", "Honduras", "El Salvador",
+                  "Nicaragua", "Cuba", "Rep. Dominicana", "Jamaica",
+                  "Trinidad y Tobago", "Bahamas", "Haití", "Belice", "Guyana",
+                  "Surinam", "Barbados", "Santa Lucía", "Granada", "Dominica")
+
+macro <- data.frame(
+  pais      = paises_macro,
+  pib       = round(runif(n, min = 50,   max = 2500), 1),  # miles de mill. USD
+  inflacion = round(runif(n, min = 1.5,  max = 50.0), 1),  # %
+  desempleo = round(runif(n, min = 2.0,  max = 18.0), 1)   # %
+)
+```
+
+a) Muestra el resumen estadístico de la base de datos
+
+```{r}
+summary(macro)
+```
+
+b) Agrega una columna `inflacion_alta` que sea `TRUE` si la inflación supera 10%
+
+```{r}
+macro$inflacion_alta <- macro$inflacion > 10
+```
+
+c) Filtra solo los países con desempleo menor a 8% y guárdalos en un objeto llamado `desempleo_bajo`
+
+```{r}
+desempleo_bajo <- macro[macro$desempleo < 8, ]
+desempleo_bajo
+```
+
+d) ¿Cuántos países tienen simultáneamente inflación alta **y** desempleo menor a 8%? (pista: combina condiciones con `&`)
+
+```{r}
+nrow(macro [macro$inflacion_alta == TRUE & macro$desempleo < 8, 0])
+```
+
+---
+
+# Parte 4 — Matrices
+
+El estimador de Mínimos Cuadrados Ordinarios tiene la siguiente forma matricial:
+
+$$\hat{\beta} = (X'X)^{-1}X'y$$
+
+Donde $X$ es la matriz de regresores (con una columna de unos para la constante) e $y$ es el vector de la variable dependiente.
+
+Ya tenemos los datos, el gráfico, y la matriz $X$ construida. Tu trabajo es calcular $\hat{\beta}$ paso a paso:
+
+```{r}
+set.seed(123)
+
+n          <- 50
+educacion  <- round(runif(n, min = 6, max = 20), 0)   # años de educación
+error      <- rnorm(n, mean = 0, sd = 2)               # ruido aleatorio
+salario    <- 2 + 1.8 * educacion + error              # miles de pesos al mes
+
+# Gráfico ya hecho — obsérvalo antes de estimar
+plot(educacion, salario,
+     main = "Educación y salario mensual",
+     xlab = "Años de educación",
+     ylab = "Salario (miles de pesos)",
+     pch  = 19, col = "steelblue")
+
+# Matriz X ya construida
+X <- matrix(c(rep(1, n), educacion), nrow = n, ncol = 2)
+colnames(X) <- c("constante", "educacion")
+
+y <- matrix(salario, nrow = n)
+```
+
+**a)** Calcula $X'X$ y su inversa $(X'X)^{-1}$
+
+```{r}
+# X'X
+XtX <- t(X) %*% X
+
+# (X'X)^-1
+XtX_inv <- solve(XtX)
+XtX
+
+XtX_inv
+```
+
+**b)** Calcula $X'y$
+
+```{r}
+Xty <- t(X) %*% y
+Xty
+```
+
+**c)** Calcula $\hat{\beta} = (X'X)^{-1}X'y$
+
+```{r}
+beta_hat <- XtX_inv %*% Xty
+beta_hat
+```
+
+
+# Parte 5 — ¿Qué está pasando aquí?
+
+El siguiente script fue escrito a las 2am antes de una presentación. Funciona. Pero nadie sabe qué hace.
+
+Tu tarea es dos cosas:
+
+1. Reescríbelo con nombres descriptivos y formato legible
+2. Explica en un comentario qué hace cada línea
+
+
+```{r}
+set.seed(2026) 
+
+#seleccionados del mundial
+numero_selecciones <- 32 
+
+#los números de grupos del mundial
+grupos <- c("Grupo A","Grupo B","Grupo C","Grupo D",
+       "Grupo E","Grupo F",
+       "Grupo G","Grupo H")
+#Matriz/data Frame de estadísticas de cada selección
+mundial <- data.frame(
+  equipo  = paste0("Selección_", 1:numero_selecciones), #nombre de cada equipo
+  goles_a_favor  = round(runif(numero_selecciones, 0, 15)), #goles a favor del equipo (anotados)
+  goles_en_contra  = round(runif(numero_selecciones, 0, 15)), #goles en contra del equipo
+  posición_en_tabla = round(runif(numero_selecciones, 1, 32)), #ranking dentro de la FIFA
+  grupo = rep(grupos, each = 4)  #grupo al que el equipo pertenece
+)
+
+#diferencia de goles anotados menos los recibidos (goles en contra)
+mundial$diferencia_goles  <- mundial$goles_a_favor - mundial$goles_en_contra
+
+#arroja 1 si el equipo terminó con diferencia de goles con signo positivo
+mundial$diferencia_positiva  <- ifelse(mundial$diferencia_goles > 0, 1, 0)
+
+#Ordenar tabla dependiendo los goles, de mayor a menor 
+rank    <- mundial[order(-mundial$goles_a_favor), ]
+
+#8 mejores equipos, más goles
+top_8    <- rank[1:8, ]
+
+#promedio y desviación estándar top 8
+goles_promedio     <- mean(top_8$goles_a_favor)
+desviacion_estandar_goles    <- sd(top_8$goles_a_favor)
+
+#z-score de goles dentro del top 8
+top_8$zscore  <- (top_8$goles_a_favor - goles_promedio) / desviacion_estandar_goles
+
+#resultados
+cat("Promedio de goles en top 8:", round(goles_promedio, 2), "\n")
+cat("Equipo con más goles:", top_8$equipo[1], "con", top_8$goles_a_favor[1], "goles\n")
+
+```
