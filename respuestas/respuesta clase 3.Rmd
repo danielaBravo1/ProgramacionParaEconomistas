@@ -1,0 +1,243 @@
+---
+title: "Clase 3: Ejercicios"
+author: "Daniela Bravo"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "##")
+```
+
+```{r}
+library(tidyverse)
+library(broom)
+library(dplyr)
+library(tidyr)
+```
+
+Trabajamos con los mismos datos de FRED de la clase. Asegúrate de que el archivo `datos/fred_macro.csv` esté en la misma carpeta que este `.Rmd`.
+
+```{r}
+macroT <- read_csv("fred_macro.csv") %>%
+  mutate(fecha = as.Date(fecha))
+glimpse(macroT)
+```
+
+---
+
+# Parte 1 — Limpieza y preparación
+
+**Ejercicio 1.** Verifica cuántos `NA` hay en cada columna.
+
+```{r}
+macroT %>%
+  summarise(across(everything(), ~ sum(is.na(.))))
+```
+
+**Ejercicio 2.** Crea las siguientes columnas nuevas en `macro` y guarda el resultado de vuelta en `macro`:
+
+- `tasa_lag1`: tasa de interés del mes anterior (`lag` de 1 periodo)
+- `desempleo_lag1`: desempleo del mes anterior
+- `crisis`: variable dummy que sea `TRUE` si el desempleo supera 7.5%
+
+```{r}
+macroT <- macroT %>%
+  mutate(
+    tasa_lag1 = lag(tasa_interes, 1),
+    desempleo_lag1 = lag(desempleo, 1),
+    crisis       = desempleo > 7.5
+  )
+
+head(macroT, 8)
+```
+
+**Ejercicio 3.** Filtra solo las filas del período 2008–2012 y guárdalas en un objeto llamado `crisis_financiera`. ¿Cuántas observaciones tiene?
+
+```{r}
+crisis_financiera <- macroT %>%
+  filter(fecha >= "2008-01-01" & fecha <= "2012-12-31")
+nrow(crisis_financiera)
+```
+
+---
+
+# Parte 2 — Exploración visual
+
+**Ejercicio 4.** Grafica las tres series (`desempleo`, `inflacion`, `tasa_interes`) en paneles separados usando `facet_wrap`. Los datos deben estar en formato largo antes de graficar.
+
+```{r}
+macroT %>%
+  select(fecha, desempleo, inflacion, tasa_interes) %>%
+  pivot_longer(-fecha, names_to = "serie", values_to = "valor") %>%
+  ggplot(aes(x = fecha, y = valor, color = serie)) +
+  geom_line(linewidth = 0.8) +
+  facet_wrap(~ serie, scales = "free_y", ncol = 1) +
+  labs(title = "Indicadores macroeconómicos de EEUU (2000–2024)",
+       x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+**Ejercicio 5.** Haz un gráfico de dispersión de `desempleo` (eje x) vs `tasa_interes` (eje y). Colorea los puntos por `crisis` y agrega una línea de regresión con `geom_smooth(method = "lm")`.
+
+```{r}
+macroT <- macroT %>%
+  mutate(
+    crisis_financiera = fecha >= "2008-01-01" &
+                        fecha <= "2012-12-31"
+  )
+macroT %>%  
+  ggplot(aes(x = desempleo, y = tasa_interes)) +
+  geom_point(aes(color = crisis_financiera), alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick") +
+  scale_color_manual(values = c("FALSE" = "steelblue", "TRUE" = "orange"),
+                     labels = c("Normal", "crisis")) +
+  labs(title = "Desempleo vs tasa de interés",
+       x = "Desempleo (%)", y = "Tasa de interés (%)",
+       color = NULL) +
+  theme_minimal()
+```
+
+¿Qué relación observas entre desempleo y tasa de interés? ¿Tiene sentido económicamente?
+
+*Tu interpretación aquí.*
+Bajo esta visualización, se observa una relación negativa débil entre la tasa de desempleo y la tasa de interés, ya que observamos que la línea roja de regresión, tiene una pendiente que desciende, lo que sugiriere que entre una menor tasa de desempleo, hay mayor tasa de interés. Esto sí hace sentido económicamente hablando, ya que muchas veces dentro de una economía, al tener una gran tasa de desempleo, la actividad económica tiene una desaceleración, por lo que los bancos centrales disminuyen las tasas de interés para modificar el consumo y balancear el crecimiento económico. Asimismo, cuando la tasa de desempleo es pequeña, los bancos centrales suelen aumentar las tasas de interés para poder controlar la inflación. 
+Dentro de la gráfica, también observamos que la dispersión de los puntos es bastante amplia, por lo que la relación puede no ser muy fuerte.
+
+---
+
+# Parte 3 — Regresión simple
+
+**Ejercicio 6.** Estima una regresión simple de `tasa_interes` sobre `inflacion`. Guárdala en `modelo_simple`.
+
+```{r}
+modelo_simple <- lm(tasa_interes ~ inflacion, 
+                    data = macroT)
+```
+
+**Ejercicio 7.** Usa `summary()` para ver los resultados e interpreta:
+- ¿El coeficiente de `inflacion` es significativo?
+- ¿Cuánta variación explica el modelo?
+- ¿El signo del coeficiente tiene sentido económico?
+
+```{r}
+summary(modelo_simple)
+```
+
+*Tu interpretación aquí.*
+- ¿El coeficiente de `inflacion` es significativo? 
+En este caso, el coeficiente arrojado fue de 0.20399, con un Pr(>|t|) de 0.0155*, siendo menor a 0.05, lo que nos indica que el coeficiente sí es significativo dentro del modelo.
+
+- ¿Cuánta variación explica el modelo?
+Observando la R^2 obtenemos un valor de 0.019, lo que sugiere que la inflación explica en un 1.9% la variación de la tasa de interés, es decir, el otro aproximado 98% de la variación restante de la tasa de interés, es explicado por otros factores no incluidos en el modelo.
+
+- ¿El signo del coeficiente tiene sentido económico?
+Sí tiene sentido económicamente ya que el modelo nos explica que cuando la inflación aumenta en 1 punto porcentual, la tasa de interés aumenta en promedio 0.203 puntos porcentuales, por lo que hace sentido que cuando se tiene un aumento en la inflación, los bancos centrales aumentan las tasas de interés para poder controlar de mejor forma el aumento de inflación.
+
+---
+
+# Parte 4 — Regresión múltiple
+
+**Ejercicio 8.** Estima tres modelos anidados y guárdalos en `m1`, `m2`, `m3`:
+
+- `m1`: `tasa_interes ~ desempleo`
+- `m2`: `tasa_interes ~ desempleo + inflacion`
+- `m3`: `tasa_interes ~ desempleo + inflacion + tasa_lag1`
+
+```{r}
+m1 <- lm (tasa_interes ~ desempleo, data = macroT)
+m2 <- lm (tasa_interes ~ desempleo + inflacion, data = macroT)
+m3 <- lm (tasa_interes ~ desempleo + inflacion + tasa_lag1, data = macroT)
+```
+
+**Ejercicio 9.** Compara los tres modelos usando `glance()` y `bind_rows()`. ¿Cuál tiene mejor $R^2$ ajustado? ¿Cuál tiene el AIC más bajo?
+
+```{r}
+list(m1, m2, m3) %>%
+  map(glance) %>%
+  bind_rows(.id = "modelo") %>%
+  select(modelo, r.squared, adj.r.squared, AIC)
+```
+
+*Tu interpretación aquí.*
+Aquí observamos que el modelo 3 cuenta con un 0.9827, lo que indica que el modelo explica el 98% de la variación, asimismo, el modelo 3 cuenta con un AIC de -154.1392, lo que nos dice que hay un mejor balance entre ajuste y complejidad dentro del modelo.
+
+**Ejercicio 10.** Toma tu mejor modelo del ejercicio anterior y usa `tidy()` para ver los coeficientes. Filtra solo los significativos al 5%.
+
+```{r}
+tidy(m3) %>%
+  filter(p.value < 0.5)
+
+```
+
+---
+
+# Parte 5 — Diagnósticos
+
+**Ejercicio 11.** Con `augment()`, haz el gráfico de residuales vs valores ajustados de `m3`. ¿Ves algún patrón problemático?
+
+```{r}
+augment(m3) %>%
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point(alpha = 0.4, color = "steelblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "firebrick") +
+  geom_smooth(se = FALSE, color = "orange", linewidth = 0.7) +
+  labs(title = "Residuales vs valores ajustados",
+       x = "Valores ajustados", y = "Residuales") +
+  theme_minimal()
+```
+
+*Tu interpretación aquí.*
+Los residuales se ven distribuidos alrededor de cero y no presentan un patron definido, por lo que el supuesto de linealidad se cumple de manera coherente. La línea suavizada naranja permanece muy cercana a cero, a pesar de eso, se presenta una ligera curva al inicio de la línea, lo que nos podría indicar desviaciones en la relación lineal. De la misma forma la dispersión parece constante a pesar de que también se observan algunos valores fuera de la línea  y una leve variación en la dispersión para valores ajustados más altos. Pero en general, el modelo parece ajustarse de forma aceptable.
+
+
+**Ejercicio 12.** Grafica los residuales de `m3` en el tiempo. Para hacerlo, necesitas agregar la columna `fecha` al resultado de `augment()`. Usa `drop_na()` antes de hacer `augment()` para evitar problemas con los rezagos.
+```{r}
+names(macroT)
+```
+
+```{r}
+macroT_limpio <- macroT %>%
+  drop_na(tasa_lag1, tasa_interes, fecha)
+
+m3 <- lm(tasa_interes ~ tasa_lag1, data = macroT_limpio)
+
+augment(m3) %>%
+  ggplot(aes(x = macroT_limpio$fecha, y = .resid)) +
+  geom_line(color = "steelblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "firebrick") +
+  theme_minimal()
+```
+
+¿Los residuales muestran algún patrón persistente a lo largo del tiempo?
+
+*Tu interpretación aquí.*
+Entre un periodo de 2000 a 2020, logramos ver periodos con relativo ruido blanco, sin embargo, a partir del 2020 en adelante, logramos ver una gran aparicion de un patrón y autocorrelación.
+---
+
+# Parte 6 — Período de crisis (opcional, para quien termine antes)
+
+**Ejercicio 13.** Estima el mismo modelo `m3` pero usando solo las observaciones del período de crisis financiera (`crisis_financiera` del Ejercicio 3). Compara los coeficientes con los del modelo completo. ¿Cambia la relación durante la crisis?
+
+```{r}
+macro_crisis <- macroT_limpio %>%
+  filter(crisis_financiera == 1)
+
+m3_crisis <- lm(tasa_interes ~ tasa_lag1, data = macro_crisis)
+
+list(completo = m3,
+     crisis = m3_crisis) %>%
+  map(glance) %>%
+  bind_rows(.id = "modelo") %>%
+  select(modelo, r.squared, AIC)
+```
+```
+
+*Tu interpretación aquí.*
+Dentro de los resultados podemos ver de manera muy clara los cambios. Dentro del modelo completo logramos ver que la r squared es de 98%, lo que nos indica que explica la variación casi completamente, asimismo, se tiene un AIC de de -130, lo que nos indica relación muy fuerte en todo el periodo. Por el otro lado, dentro del r squared de crisis, pasamos a una explicación de la variacion del modelo de 63.69 y un AIC de -63.82, lo que nos indica que hay mucha más incertidumbre o ruido dentro del periodo.
