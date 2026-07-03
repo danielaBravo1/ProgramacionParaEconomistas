@@ -1,0 +1,168 @@
+---
+title: "Clase 4: Visualización de datos en R"
+subtitle: "Taquerías de México — DENUE, INEGI"
+author: "Introducción a la Programación para Economistas"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "##",
+                      fig.width = 10, fig.height = 5)
+```
+
+```{r}
+library(tidyverse)
+library(patchwork)
+```
+
+---
+
+# Los datos: DENUE
+
+Dentro de esta plataforma, utilizaré la consulta de Servicios de alojamiento temporal, el cual incluye Hoteles, moteles y similares, Campamentos y albergues recreativos, así como Pensiones y casas de huéspedes, y departamentos de renta. 
+Se plantea la pregunta: 
+Cómo se distribuyen los establecimientos de alojamiento temporal entre los municipios de los estados con mayor oferta turística en México.
+
+```{r}
+datos <- read_csv('alojamiento.csv',
+                      locale = locale(encoding = "latin1"))
+glimpse(datos)
+```
+
+# Reconocimiento de lenguaje
+
+```{r}
+library(readr)
+guess_encoding('alojamiento.csv')
+```
+
+
+# Limpieza rápida
+
+Seleccionamos solo las columnas útiles y les damos nombres manejables:
+
+```{r}
+aloj_temp <- datos %>%
+  select(
+    id          = ID,
+    actividad   = `Nombre de clase de la actividad`,
+    estrato     = `Descripcion estrato personal ocupado`,
+    municipio   = Municipio,
+    entidad     = `Entidad federativa`,
+    tipo        = `Tipo de asentamiento humano`,
+    lat         = Latitud,
+    lon         = Longitud,
+    scian   = `Código de la clase de actividad SCIAN`,
+    fecha_inc  = `Fecha de incorporación al DENUE`
+  ) %>%
+  mutate(
+    año_inc = str_sub(fecha_inc, 1, 4) %>% as.integer(),
+    estrato = fct_relevel(estrato,
+      "0 a 5 personas", "6 a 10 personas", "11 a 30 personas",
+      "31 a 50 personas", "51 a 100 personas", "101 a 250 personas"))
+aloj_temp
+
+```
+
+# Verificación de variables NA
+
+```{r}
+summary(aloj_temp)
+colSums(is.na(aloj_temp))
+```
+
+# Gráficos iniciales
+
+Se presentará cuál es la distribución de establecimientos de alojamiento temporales en las 5 entidades federativas con mayor oferta turística en México.
+
+```{r}
+top5_estados <- aloj_temp %>%
+  count(entidad, sort = TRUE) %>%   
+  slice_head(n = 5)                
+
+top5_estados
+
+ggplot(data    = top5_estados,       
+       mapping = aes(x = entidad,      
+                     y = n)) +          
+  geom_col()
+```
+
+
+
+---
+
+# Distribución de establecimientos por entidad federativa
+
+```{r}
+municipios_top5 <- aloj_temp %>%
+  filter(entidad %in% top5_estados$entidad) %>%
+  count(entidad, municipio, sort = TRUE)
+
+municipios_top5
+
+```
+
+
+
+# Concentración de alojamientos temporales por entidad federativa (porcentaje)
+
+```{r}
+municipios_top5 <- municipios_top5 %>%
+  group_by(entidad) %>%
+  mutate(
+    porcentaje = n / sum(n) * 100
+  ) %>%
+  ungroup()
+municipios_top5
+```
+
+# Gráfica
+
+```{r}
+municipios_top5 %>%
+  group_by(entidad) %>%
+  slice_max(n,                       #valores maximos de cada variable
+            n = 5,
+            with_ties = FALSE) %>%    #Si hay empate en el quinto lugar, conservarlos
+  ungroup() %>%
+  mutate(municipio = fct_reorder(municipio,
+                            porcentaje)
+  ) %>%
+  ggplot(aes(x = porcentaje,
+             y = municipio))+
+    geom_col(fill="steelblue")+
+    facet_wrap(~entidad,
+               scales="free_y")
+```
+
+# Diseño de gráfico
+
+```{r}
+municipios_top5 %>%
+  group_by(entidad) %>%
+  slice_max(n,                       #valores maximos de cada variable
+            n = 5,
+            with_ties = FALSE) %>%    #Si hay empate en el quinto lugar, conservarlos
+  ungroup() %>%
+  mutate(municipio = fct_reorder(municipio,
+                            porcentaje)
+  ) %>%
+  ggplot(aes(x = porcentaje,y = municipio))+
+    geom_col(fill="steelblue", alpha = 0.85)+
+    facet_wrap(~entidad,scales="free_y", ncol = 2)+
+  labs(title = "Concentración de alojamientos temporales por entidad federativa (porcentaje)",
+       subtitle = "Top 5 municipios de cada entidad",
+       x = NULL , y = NULL) +
+  theme_minimal()
+```
+
+# Interpretación
+
+Estas gráficas nos muestran que la oferta de establecimientos de alojamiento temporal se encuentra concentrada en algunos municipios dentro de cada una de las cinco top entidades analizadas. Sin embargo, el grado de concentración varía entre estados. En Puebla, el municipio de Puebla concentra aproximadamente el 21% de los establecimientos de alojamiento del estado, en Veracruz, la distribución es más equilibrada, ya que el municipio de Tecolutla representa cerca del 12% del total estatal.

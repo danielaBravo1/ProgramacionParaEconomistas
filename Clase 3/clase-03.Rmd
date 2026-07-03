@@ -1,0 +1,215 @@
+---
+title: "Clase 3: Econometría con datos reales"
+author: "Introducción a la Programación para Economistas"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "##")
+```
+
+```{r}
+library(tidyverse)
+library(broom)
+```
+
+En esta clase usamos datos macroeconómicos reales descargados de FRED — la base de datos del Banco de la Reserva Federal de St. Louis, una de las fuentes más usadas en economía aplicada. El archivo ya está en el repositorio para que no dependamos de internet en clase.
+
+---
+
+# Los datos
+
+Tenemos tres series mensuales de EEUU desde enero 2000 hasta mediados de 2024:
+
+- **desempleo**: tasa de desempleo (%)
+- **inflacion**: inflación anual del CPI (%)
+- **tasa_interes**: tasa de fondos federales (%)
+
+```{r}
+macro <- read_csv("datos/fred_macro.csv")
+glimpse(macro)
+```
+
+---
+
+# Limpiar y preparar los datos
+
+## Fechas
+
+La columna `fecha` llegó como texto. Hay que convertirla a formato fecha para que R la entienda como una dimensión temporal:
+
+```{r}
+macro <- macro %>%
+  mutate(fecha = as.Date(fecha))
+
+class(macro$fecha)
+```
+
+## Valores faltantes
+
+Siempre hay que revisar si hay `NA` antes de modelar:
+
+```{r}
+macro %>%
+  summarise(across(everything(), ~ sum(is.na(.))))
+```
+
+## Crear variables nuevas
+
+Vamos a crear una variable de rezago de inflación (inflación del mes anterior) y una dummy que indique si la economía estaba en recesión — definida aquí como desempleo mayor a 6%:
+
+```{r}
+macro <- macro %>%
+  mutate(
+    inflacion_lag1 = lag(inflacion, 1),
+    recesion       = desempleo > 6
+  )
+
+head(macro, 8)
+```
+
+`lag(x, 1)` trae el valor del periodo anterior. Es equivalente a "rezagar" la serie un periodo.
+
+---
+
+# Exploración visual
+
+Antes de estimar cualquier modelo, hay que ver los datos. Muchos errores de especificación se detectan antes de correr una sola regresión.
+
+## Las tres series juntas
+
+Para graficar tres series en el mismo panel, primero pivoteamos a formato largo:
+
+```{r}
+macro %>%
+  select(fecha, desempleo, inflacion, tasa_interes) %>%
+  pivot_longer(-fecha, names_to = "serie", values_to = "valor") %>%
+  ggplot(aes(x = fecha, y = valor, color = serie)) +
+  geom_line(linewidth = 0.8) +
+  facet_wrap(~ serie, scales = "free_y", ncol = 1) +
+  labs(title = "Indicadores macroeconómicos de EEUU (2000–2024)",
+       x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Se ven claramente los tres grandes shocks: la recesión de 2001, la crisis financiera de 2008-2009, y el COVID en 2020 — seguido del repunte inflacionario de 2021-2022.
+
+## Relación entre inflación y tasa de interés
+
+La curva de Phillips y la regla de Taylor sugieren que la tasa de interés reacciona a la inflación. ¿Se ve eso en los datos?
+
+```{r}
+macro %>%
+  ggplot(aes(x = inflacion, y = tasa_interes)) +
+  geom_point(aes(color = recesion), alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick") +
+  scale_color_manual(values = c("FALSE" = "steelblue", "TRUE" = "orange"),
+                     labels = c("Normal", "Recesión")) +
+  labs(title = "Inflación vs tasa de interés",
+       x = "Inflación (%)", y = "Tasa de interés (%)",
+       color = NULL) +
+  theme_minimal()
+```
+
+---
+
+# Regresión múltiple
+
+## El modelo
+
+Queremos entender qué factores determinan la tasa de interés de la Fed. Según la regla de Taylor, la Fed reacciona a la inflación y al desempleo. Nuestro modelo:
+
+$$tasa\_interes_t = \beta_0 + \beta_1 \cdot inflacion_t + \beta_2 \cdot inflacion\_lag1_t + \beta_3 \cdot desempleo_t + \varepsilon_t$$
+
+```{r}
+modelo <- lm(tasa_interes ~ inflacion + inflacion_lag1 + desempleo,
+             data = macro)
+
+summary(modelo)
+```
+
+## Leer el output
+
+Hay cuatro cosas que leer en `summary()`:
+
+**Los coeficientes** (`Estimate`): el efecto estimado de cada variable sobre la tasa de interés, manteniendo las demás constantes. Un coeficiente positivo en `inflacion` significa que cuando sube la inflación, la Fed tiende a subir las tasas.
+
+**El error estándar** (`Std. Error`): qué tan precisa es la estimación. Un error estándar grande relativo al coeficiente indica poca precisión.
+
+**El p-value** (`Pr(>|t|)`): si es menor a 0.05, el coeficiente es estadísticamente significativo al 5%. Los asteriscos son un atajo visual: `***` significa p < 0.001.
+
+**El $R^2$ ajustado**: cuánta variación de la tasa de interés explica el modelo. Un $R^2$ ajustado de 0.6 significa que el modelo captura el 60% de la variación.
+
+## Extraer resultados con broom
+
+`summary()` imprime bien en pantalla, pero para trabajar con los resultados en código conviene usar `broom`:
+
+```{r}
+# Coeficientes en data frame
+tidy(modelo)
+
+# Estadísticos del modelo en data frame
+glance(modelo) %>%
+  select(r.squared, adj.r.squared, AIC, nobs)
+```
+
+## Diagnósticos: residuales
+
+El supuesto de MCO es que los errores no tienen patrón. Si los residuales muestran estructura, el modelo está mal especificado:
+
+```{r}
+augment(modelo) %>%
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point(alpha = 0.4, color = "steelblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "firebrick") +
+  geom_smooth(se = FALSE, color = "orange", linewidth = 0.7) +
+  labs(title = "Residuales vs valores ajustados",
+       x = "Valores ajustados", y = "Residuales") +
+  theme_minimal()
+```
+
+Si la línea naranja (tendencia suavizada) se aleja del cero, hay estructura en los residuales — señal de que falta algo en el modelo o de que la relación no es lineal.
+
+## Residuales en el tiempo
+
+Con series de tiempo es especialmente importante revisar si los residuales tienen autocorrelación:
+
+```{r}
+augment(modelo) %>%
+  mutate(fecha = macro$fecha[!is.na(macro$inflacion_lag1)]) %>%
+  ggplot(aes(x = fecha, y = .resid)) +
+  geom_line(color = "steelblue", linewidth = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "firebrick") +
+  labs(title = "Residuales en el tiempo",
+       x = NULL, y = "Residuales") +
+  theme_minimal()
+```
+
+Si los residuales muestran un patrón persistente a lo largo del tiempo (suben durante varios meses seguidos, bajan durante varios meses seguidos), hay autocorrelación serial — uno de los supuestos de MCO que se viola con más frecuencia en series de tiempo.
+
+---
+
+# Comparar modelos
+
+Una buena práctica es comparar tu modelo principal contra versiones más simples o más ricas, para verificar que las variables que incluiste aportan información:
+
+```{r}
+m1 <- lm(tasa_interes ~ inflacion,                              data = macro)
+m2 <- lm(tasa_interes ~ inflacion + desempleo,                  data = macro)
+m3 <- lm(tasa_interes ~ inflacion + inflacion_lag1 + desempleo, data = macro)
+
+list(m1, m2, m3) %>%
+  map(glance) %>%
+  bind_rows(.id = "modelo") %>%
+  select(modelo, r.squared, adj.r.squared, AIC)
+```
+
+El modelo con más variables no siempre es el mejor — el $R^2$ ajustado penaliza por variables que no aportan, y el AIC más bajo indica mejor balance entre ajuste y complejidad.
+

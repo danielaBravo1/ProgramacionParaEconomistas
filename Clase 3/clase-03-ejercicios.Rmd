@@ -1,0 +1,157 @@
+---
+title: "Clase 3: Ejercicios"
+author: "Tu nombre aquí"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "##")
+```
+
+```{r}
+library(tidyverse)
+library(broom)
+```
+
+Trabajamos con los mismos datos de FRED de la clase. Asegúrate de que el archivo `datos/fred_macro.csv` esté en la misma carpeta que este `.Rmd`.
+
+```{r}
+macro <- read_csv("datos/fred_macro.csv") %>%
+  mutate(fecha = as.Date(fecha))
+```
+
+---
+
+# Parte 1 — Limpieza y preparación
+
+**Ejercicio 1.** Verifica cuántos `NA` hay en cada columna.
+
+```{r}
+
+```
+
+**Ejercicio 2.** Crea las siguientes columnas nuevas en `macro` y guarda el resultado de vuelta en `macro`:
+
+- `tasa_lag1`: tasa de interés del mes anterior (`lag` de 1 periodo)
+- `desempleo_lag1`: desempleo del mes anterior
+- `crisis`: variable dummy que sea `TRUE` si el desempleo supera 7.5%
+
+```{r}
+
+```
+
+**Ejercicio 3.** Filtra solo las filas del período 2008–2012 y guárdalas en un objeto llamado `crisis_financiera`. ¿Cuántas observaciones tiene?
+
+```{r}
+
+```
+
+---
+
+# Parte 2 — Exploración visual
+
+**Ejercicio 4.** Grafica las tres series (`desempleo`, `inflacion`, `tasa_interes`) en paneles separados usando `facet_wrap`. Los datos deben estar en formato largo antes de graficar.
+
+```{r}
+
+```
+
+**Ejercicio 5.** Haz un gráfico de dispersión de `desempleo` (eje x) vs `tasa_interes` (eje y). Colorea los puntos por `crisis` y agrega una línea de regresión con `geom_smooth(method = "lm")`.
+
+```{r}
+
+```
+
+¿Qué relación observas entre desempleo y tasa de interés? ¿Tiene sentido económicamente?
+
+*Tu interpretación aquí.*
+
+---
+
+# Parte 3 — Regresión simple
+
+**Ejercicio 6.** Estima una regresión simple de `tasa_interes` sobre `inflacion`. Guárdala en `modelo_simple`.
+
+```{r}
+
+```
+
+**Ejercicio 7.** Usa `summary()` para ver los resultados e interpreta:
+- ¿El coeficiente de `inflacion` es significativo?
+- ¿Cuánta variación explica el modelo?
+- ¿El signo del coeficiente tiene sentido económico?
+
+```{r}
+
+```
+
+*Tu interpretación aquí.*
+
+---
+
+# Parte 4 — Regresión múltiple
+
+**Ejercicio 8.** Estima tres modelos anidados y guárdalos en `m1`, `m2`, `m3`:
+
+- `m1`: `tasa_interes ~ desempleo`
+- `m2`: `tasa_interes ~ desempleo + inflacion`
+- `m3`: `tasa_interes ~ desempleo + inflacion + tasa_lag1`
+
+```{r}
+
+```
+
+**Ejercicio 9.** Compara los tres modelos usando `glance()` y `bind_rows()`. ¿Cuál tiene mejor $R^2$ ajustado? ¿Cuál tiene el AIC más bajo?
+
+```{r}
+
+```
+
+*Tu interpretación aquí.*
+
+**Ejercicio 10.** Toma tu mejor modelo del ejercicio anterior y usa `tidy()` para ver los coeficientes. Filtra solo los significativos al 5%.
+
+```{r}
+
+```
+
+---
+
+# Parte 5 — Diagnósticos
+
+**Ejercicio 11.** Con `augment()`, haz el gráfico de residuales vs valores ajustados de `m3`. ¿Ves algún patrón problemático?
+
+```{r}
+
+```
+
+*Tu interpretación aquí.*
+
+**Ejercicio 12.** Grafica los residuales de `m3` en el tiempo. Para hacerlo, necesitas agregar la columna `fecha` al resultado de `augment()`. Usa `drop_na()` antes de hacer `augment()` para evitar problemas con los rezagos.
+
+```{r}
+
+```
+
+¿Los residuales muestran algún patrón persistente a lo largo del tiempo?
+
+*Tu interpretación aquí.*
+
+---
+
+# Parte 6 — Período de crisis (opcional, para quien termine antes)
+
+**Ejercicio 13.** Estima el mismo modelo `m3` pero usando solo las observaciones del período de crisis financiera (`crisis_financiera` del Ejercicio 3). Compara los coeficientes con los del modelo completo. ¿Cambia la relación durante la crisis?
+
+```{r}
+
+```
+
+*Tu interpretación aquí.*
+

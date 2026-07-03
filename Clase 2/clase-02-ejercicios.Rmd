@@ -19,7 +19,7 @@ library(tidyverse)
 ```
 
 Completa los chunks de código. Cuando termines, haz **Knit** y verifica que todo corra sin errores antes de entregar.
-
+Este es un texto de prueba 
 ---
 
 # Datos: una tienda de ropa en línea
