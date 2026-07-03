@@ -19,6 +19,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "
 ```{r}
 library(tidyverse)
 library(patchwork)
+library(readxl)
 ```
 
 ---
@@ -74,7 +75,7 @@ taquerias <- denue_raw %>%
     estrato = fct_relevel(estrato,
       "0 a 5 personas", "6 a 10 personas", "11 a 30 personas",
       "31 a 50 personas", "51 a 100 personas", "101 a 250 personas"))
-
+colnames(taquerias)
 ```
 
 Con esto ya podemos trabajar. Ahora sí, a graficar.
@@ -118,6 +119,7 @@ ggplot(data    = top10_municipios,       # los datos que acabamos de preparar
        mapping = aes(x = municipio,      # eje horizontal: nombre del municipio
                      y = n)) +           # eje vertical: el conteo que calculamos arriba
   geom_col()                             # geom_col = barras, donde la altura es y
+
 ```
 
 Funciona, pero es difícil de leer. Lo vamos a mejorar capa por capa.
@@ -226,6 +228,8 @@ top10_municipios <- taquerias %>%
 
 ggplot(top10_municipios, aes(x = n, y = municipio, fill = es_cdmx)) +
   geom_col()
+
+
 ```
 
 ## Paso 3: diseño (siempre al final)
@@ -234,14 +238,14 @@ ggplot(top10_municipios, aes(x = n, y = municipio, fill = es_cdmx)) +
 
 # ── Gráfica ───────────────────────────────────────────────────────────────────
 
-ggplot(top10_municipios, aes(x = n, y = municipio, fill = es_cdmx)) +
-  geom_col(alpha = 0.85) + #Transparencia de las barras 
+taquerias <- ggplot(top10_municipios, aes(x = n, y = municipio, fill = es_cdmx)) +
+  geom_col(alpha = 0.5) + #Transparencia de las barras 
 
   # por defecto ggplot colorea TRUE/FALSE con colores automáticos
   # scale_fill_manual nos permite elegir los colores y cambiar las etiquetas
   # de la leyenda — "TRUE" y "FALSE" no le dicen nada al lector
   scale_fill_manual(
-    values = c("TRUE"  = "steelblue",
+    values = c("TRUE"  = "blue2",
                "FALSE" = "green4"),
     labels = c("TRUE"  = "CDMX",
                "FALSE" = "Otro estado")
@@ -303,7 +307,7 @@ taquerias_por_municipio <- taquerias %>%
 p_crudo <- taquerias_por_municipio %>%
   mutate(etiqueta = fct_reorder(etiqueta, n)) %>%   # ordena por n, no alfabéticamente
   ggplot(aes(x = n, y = etiqueta)) +
-  geom_col(fill = "darkslategray3", alpha = 0.9) +
+  geom_col(fill = "burlywood2", alpha = 0.9) +
   labs(title   = "Taquerías por municipio",
        subtitle = "Gana el municipio más grande, no el más taquero",
        x = "Número de taquerías", y = NULL) +
