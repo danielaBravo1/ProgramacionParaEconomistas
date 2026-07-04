@@ -1,0 +1,537 @@
+---
+title: "Clase 5: Web Scraping"
+subtitle: "Transfermarkt + Wikipedia — ¿El dinero predice el éxito en el Mundial?"
+author: "Introducción a la Programación para Economistas"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "##",
+                      fig.width = 10, fig.height = 5)
+```
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(polite)
+library(broom)
+library(patchwork)
+```
+
+---
+
+# ¿Qué es web scraping?
+
+Cuando abres una página web, tu navegador hace lo siguiente:
+
+1. **Manda una petición** al servidor: "dame el contenido de esta URL"
+2. El servidor **responde** con un archivo de texto en formato **HTML**
+3. El navegador **interpreta** ese HTML y lo convierte en la página visual que ves
+
+**Web scraping** es el paso 2 sin el paso 3: leemos ese HTML directamente desde R y extraemos los datos que nos interesan — sin copiar y pegar a mano.
+
+La diferencia con una **API**: una API es un servicio que el sitio ofrece explícitamente para dar datos estructurados. El scraping lee el HTML que estaba pensado para un navegador. Las APIs son más estables; el scraping es más flexible pero más frágil — si el sitio cambia su diseño, el código puede romperse.
+
+---
+
+# Buenas prácticas antes de scrapear
+
+Antes de scrapear cualquier sitio hay que revisar su archivo `robots.txt` — un archivo que los sitios publican para indicar qué partes pueden ser accedidas por bots y a qué velocidad.
+
+El paquete `polite` hace esto automáticamente: revisa el `robots.txt`, se presenta con un User-Agent de navegador (sin esto muchos sitios bloquean la petición), y respeta los tiempos de espera indicados.
+
+```{r, eval=FALSE}
+# install.packages("polite")
+library(polite)
+
+# bow() se "presenta" ante el sitio y revisa el robots.txt
+sesion <- bow("https://www.transfermarkt.es",
+              user_agent = "Mozilla/5.0 (compatible; estudiante/1.0)")
+
+sesion
+```
+
+Y siempre hay que guardar los datos después de scrapear:
+
+```{r, eval=FALSE}
+# guardar una vez
+write_csv(datos_modelo, "datos_crudos.csv")
+
+# en futuras sesiones leer del disco — no volver a scrapear
+datos_modelo <- read_csv("datos_crudos.csv")
+```
+
+---
+
+# La pregunta
+
+¿El valor de mercado de una selección predice cuántos puntos saca en la fase de grupos del Mundial?
+
+Para responderla necesitamos dos fuentes:
+
+- **Transfermarkt**: valor de mercado, edad promedio y experiencia de cada selección
+- **Wikipedia**: puntos reales obtenidos en la fase de grupos del Mundial 2026
+
+---
+
+# Parte 1: Scraping de Transfermarkt
+
+## Cómo identificar qué tabla queremos
+
+Antes de escribir código, hay que inspeccionar la página. En Chrome:
+
+1. Ve a la página que quieres scrapear
+2. Clic derecho sobre la tabla → **Inspeccionar**
+3. En el panel de HTML, busca el tag `<table>` y su atributo `class`
+
+En Transfermarkt, las tablas usan la clase CSS `items`. Eso es lo que le decimos a `rvest`.
+
+```{r}
+url_tm <- "https://www.transfermarkt.es/weltmeisterschaft/teilnehmer/pokalwettbewerb/FIWC/saison_id/2025"
+
+# polite descarga el HTML respetando el robots.txt
+sesion <- bow(url_tm, user_agent = "Mozilla/5.0 (compatible; estudiante/1.0)")
+pagina <- scrape(sesion)
+
+# html_elements("table.items") selecciona todas las tablas con clase "items"
+# html_table() convierte cada tabla HTML en un data frame de R
+tablas <- pagina %>%
+  html_elements("table.items") %>%
+  html_table()
+
+# la página tiene tres tablas — una por grupo de selecciones
+length(tablas)
+```
+
+```{r}
+# veamos los nombres de columnas de la primera tabla
+# janitor::clean_names() los convierte a formato manejable (sin espacios, sin acentos)
+tablas[[1]] %>%
+  janitor::clean_names() %>%
+  names()
+```
+
+Hay dos columnas llamadas `Club` — una es el escudo (imagen) y otra el nombre del país. Después de `clean_names()` se llaman `club` y `club_2`.
+
+```{r}
+# veamos la primera fila para confirmar qué tiene cada columna
+tablas[[1]] %>%
+  janitor::clean_names() %>%
+  .[1, ]
+```
+
+## Limpiar y combinar las dos tablas
+
+```{r}
+limpiar_tabla_tm <- function(tabla) {
+  tabla %>%
+    janitor::clean_names() %>%
+    select(
+      pais            = club,       # character — nombre del país
+      plantilla       = plantilla,     # integer — tamaño de plantilla (26)
+      edad_promedio   = oslash_edad,
+      participaciones = participaciones,
+      extranjero      = en_el_extranjero,
+      valor_mercado   = valor_de_mercado,
+      valor_promedio  = oslash_valor_de_mercado
+    ) %>%
+    mutate(pais = as.character(pais)) %>%
+    filter(!is.na(pais), pais != "Club")
+}
+
+tabla1 <- limpiar_tabla_tm(tablas[[1]])
+tabla2 <- limpiar_tabla_tm(tablas[[2]])
+
+# unimos las dos tablas — bind_rows al final para que los nombres ya estén limpios
+mundial_2026 <- bind_rows(tabla1, tabla2)
+
+head(mundial_2026, 5)
+```
+
+## Limpiar formatos
+
+Los valores de mercado vienen como texto (`"1,52 mil mill. €"`) — hay que convertirlos a números. El truco es detectar si dice "mil mill." o solo "mill." para saber si hay que multiplicar por 1000:
+
+```{r}
+# ── Limpiar formatos ──────────────────────────────────────────────────────────
+
+# Los datos de Transfermarkt vienen como texto, no como números.
+# Antes de poder hacer cualquier cálculo hay que convertirlos.
+# Usamos mutate() para modificar varias columnas a la vez.
+
+mundial_2026 <- mundial_2026 %>%
+  mutate(
+
+    # ── edad_promedio ──────────────────────────────────────────────────────────
+    # viene como "27,1" — Europa usa coma como separador decimal, no punto
+    # str_replace(x, ",", ".") cambia la coma por punto: "27,1" → "27.1"
+    # as.numeric() convierte el texto a número: "27.1" → 27.1
+    edad_promedio = str_replace(edad_promedio, ",", ".") %>%
+                    as.numeric(),
+
+    # ── extranjero ─────────────────────────────────────────────────────────────
+    # viene como "73,1 %" — hay que quitar el símbolo % y la coma decimal
+    # paso 1: str_remove(x, " %") quita " %" del texto: "73,1 %" → "73,1"
+    # paso 2: str_replace(x, ",", ".") cambia la coma: "73,1" → "73.1"
+    # paso 3: as.numeric() convierte a número: "73.1" → 73.1
+    extranjero = str_remove(extranjero, " %") %>%
+                 str_replace(",", ".") %>%
+                 as.numeric(),
+
+    # ── valor_mercado ──────────────────────────────────────────────────────────
+    # este es el más complicado porque viene en tres formatos distintos:
+    #   "1,52 mil mill. €"  → 1,520 millones  (miles de millones)
+    #   "947,00 mill. €"    → 947 millones
+    #
+    # usamos case_when() — funciona como un if/else pero para vectores:
+    # evalúa cada fila y aplica la fórmula del primer caso que se cumpla
+    #
+    # str_detect(x, "texto") devuelve TRUE si "texto" aparece en x
+    # str_extract(x, "[\\d,]+") extrae solo los dígitos y comas del texto
+    #   por ejemplo: "1,52 mil mill. €" → "1,52"
+    #   [\\d,]+ significa: uno o más caracteres que sean dígito (\\d) o coma (,)
+
+    valor_mercado = case_when(
+
+      # caso 1: contiene "mil mill" → son miles de millones
+      # extraemos el número, cambiamos coma por punto, y multiplicamos por 1000
+      # "1,52 mil mill. €" → "1,52" → "1.52" → 1.52 → 1520 millones
+      str_detect(valor_mercado, "mil mill") ~
+        str_extract(valor_mercado, "[\\d,]+") %>%
+        str_replace(",", ".") %>%
+        as.numeric() * 1000,
+
+      # caso 2: contiene "mill" (pero NO "mil mill", porque ese ya se atrapó arriba)
+      # extraemos el número y convertimos directamente a millones
+      # "947,00 mill. €" → "947,00" → "947.00" → 947 millones
+      str_detect(valor_mercado, "mill") ~
+        str_extract(valor_mercado, "[\\d,]+") %>%
+        str_replace(",", ".") %>%
+        as.numeric(),
+
+      # caso 3 (TRUE): cualquier otra cosa → NA
+      # TRUE funciona como el "else" final — atrapa todo lo que no coincidió arriba
+      TRUE ~ NA_real_
+    ),
+
+    # ── valor_promedio ─────────────────────────────────────────────────────────
+    # mismo problema que valor_mercado, pero con un tercer formato:
+    #   "991 mil €" → son miles de euros, no millones
+    #   hay que dividir entre 1000 para convertir a millones
+
+    valor_promedio = case_when(
+
+      str_detect(valor_promedio, "mil mill") ~
+        str_extract(valor_promedio, "[\\d,]+") %>%
+        str_replace(",", ".") %>%
+        as.numeric() * 1000,
+
+      str_detect(valor_promedio, "mill") ~
+        str_extract(valor_promedio, "[\\d,]+") %>%
+        str_replace(",", ".") %>%
+        as.numeric(),
+
+      # caso nuevo: "991 mil €" → miles de euros → dividimos entre 1000
+      # "991 mil €" → "991" → 991 → 991/1000 → 0.991 millones
+      str_detect(valor_promedio, "mil €") ~
+        str_extract(valor_promedio, "[\\d,]+") %>%
+        str_replace(",", ".") %>%
+        as.numeric() / 1000,
+
+      TRUE ~ NA_real_
+    )
+  )
+
+head(mundial_2026,5)
+```
+
+---
+
+# Parte 2: Scraping de Wikipedia
+
+## Identificar las tablas correctas
+
+Wikipedia es más sencilla de scrapear que Transfermarkt porque no bloquea bots. Usamos `read_html()` directamente.
+
+Primero inspeccionamos cuántas tablas hay y cuáles tienen la columna `Pts`:
+
+```{r}
+# ── Scrapear Wikipedia ────────────────────────────────────────────────────────
+
+# read_html() descarga el HTML completo de la página y lo guarda en un objeto
+# es como cuando tu navegador "abre" la página, pero en vez de mostrártela
+# visualmente, R la guarda como texto para que podamos extraer datos de ella
+pagina_wiki <- read_html(
+  "https://es.wikipedia.org/wiki/Copa_Mundial_de_F%C3%BAtbol_de_2026"
+)
+
+# html_elements("table") busca todos los tags <table> en el HTML
+# html_table() convierte cada tabla HTML en un data frame de R
+# el resultado es una lista — cada elemento de la lista es una tabla distinta
+todas_tablas <- pagina_wiki %>%
+  html_elements("table") %>%
+  html_table()
+
+# una página de Wikipedia puede tener decenas de tablas
+# (infoboxes, tablas de navegación, tablas de datos, etc.)
+# necesitamos identificar cuáles son las tablas de grupos
+# las tablas de grupos tienen una columna llamada exactamente "Pts"
+
+# seq_along(todas_tablas) genera la secuencia 1, 2, 3, ..., n
+# donde n es el número total de tablas — equivale a 1:length(todas_tablas)
+# usamos un for loop para revisar cada tabla una por una
+
+for (i in seq_along(todas_tablas)) {
+
+  # colnames() devuelve los nombres de las columnas de la tabla i
+  cols <- colnames(todas_tablas[[i]])
+
+  # any() devuelve TRUE si AL MENOS UNO de los elementos es TRUE
+  # str_detect(cols, "^Pts$") revisa si algún nombre de columna es exactamente "Pts"
+  #   ^ significa "empieza con"
+  #   $ significa "termina con"
+  #   juntos, "^Pts$" significa "exactamente Pts" — no "Puntos", no "Pts acumulados"
+  if (any(str_detect(cols, "^Pts$"))) {
+
+    # cat() imprime texto en la consola
+    # paste(cols, collapse = ", ") une todos los nombres de columnas con ", "
+    # así vemos: "Tabla 15 : Selección, Pts, PJ, PG, PE, PP, GF, GC, Dif"
+    cat("Tabla", i, ":", paste(cols, collapse = ", "), "\n")
+  }
+}
+
+# el output nos dice que las tablas de grupos están en los índices
+# 15, 22, 29, 36... — cada 7 posiciones, una por cada grupo (A hasta L)
+```
+
+Las tablas de grupos aparecen en los índices 15, 22, 29... cada 7 posiciones — una por cada uno de los 12 grupos del Mundial 2026. La tabla 99 es el clasificación general.
+
+```{r}
+# ya sabemos que las tablas de grupos están en las posiciones 15, 22, 29...
+# en vez de extraerlas una por una (tabla 15, tabla 22, tabla 29...),
+# creamos una secuencia con seq() para automatizarlo
+
+# seq(15, 92, by = 7) genera: 15, 22, 29, 36, 43, 50, 57, 64, 71, 78, 85, 92
+# son exactamente 12 números — uno por cada grupo del Mundial 2026
+indices_grupos <- seq(15, 92, by = 7)
+
+# LETTERS es un vector que ya viene en R con las 26 letras del abecedario
+# LETTERS[1:12] toma las primeras 12: "A", "B", "C", ..., "L"
+grupos <- LETTERS[1:12]
+
+# ── map2_dfr ──────────────────────────────────────────────────────────────────
+# map2_dfr es del paquete purrr (parte del tidyverse)
+# hace dos cosas a la vez:
+# 1. itera sobre DOS vectores en paralelo (indices_grupos y grupos)
+# 2. combina todos los resultados en un solo data frame (eso es el "_dfr")
+#
+# en cada iteración recibe dos valores:
+#   idx   = el índice de la tabla (15, 22, 29...)
+#   letra = la letra del grupo ("A", "B", "C"...)
+#
+# es equivalente a hacer esto a mano pero para los 12 grupos:
+#   grupo_a <- todas_tablas[[15]] %>% mutate(grupo = "Grupo A")
+#   grupo_b <- todas_tablas[[22]] %>% mutate(grupo = "Grupo B")
+#   ...
+#   bind_rows(grupo_a, grupo_b, ...)
+
+fase_grupos <- map2_dfr(indices_grupos, grupos, function(idx, letra) {
+
+  todas_tablas[[idx]] %>%
+
+    # mutate agrega una columna nueva a cada tabla
+    # paste0("Grupo ", letra) pega "Grupo " con la letra: "Grupo A", "Grupo B"...
+    # así cuando unamos las 12 tablas sabemos de qué grupo es cada fila
+    mutate(grupo = paste0("Grupo ", letra))
+})
+
+head(fase_grupos, 5)
+# 48 filas en total — 4 selecciones × 12 grupos
+```
+
+## Limpiar la columna de país
+
+La columna `Selección` viene con el código FIFA adelante (`"MEX México"`). Usamos `substr` para cortar los primeros 4 caracteres (3 letras + 1 espacio):
+
+```{r}
+fase_grupos <- fase_grupos %>%
+  mutate(
+    # substr(x, 5, nchar(x)) corta los primeros 4 caracteres (el código FIFA + espacio)
+    # "MEX México" → "México",  "ARG Argentina" → "Argentina"
+    pais = substr(Selección, 5, nchar(Selección)),
+
+    # algunos nombres difieren entre TM y Wikipedia — los igualamos a mano
+    # si no, el join no va a encontrar la pareja y perdemos esas filas
+    pais = case_when(
+      pais == "República Checa"      ~ "Chequia",
+      pais == "Bosnia y Herzegovina" ~ "Bosnia-Herzegovina",
+      pais == "R. D. del Congo"      ~ "República Democrática del Congo",
+      TRUE                           ~ pais
+    ),
+
+    # Dif viene con guión tipográfico "–" en vez de "-"
+    # R no lo reconoce como negativo hasta que lo reemplazamos
+    Dif = str_replace(Dif, "–", "-") %>% as.integer()
+  ) %>%
+  select(-Selección)   # ya no necesitamos la columna original
+
+# anti_join devuelve los países que NO tienen pareja en la otra tabla
+# character(0) en ambos significa que todos coinciden — podemos hacer el join
+anti_join(fase_grupos, mundial_2026, by = "pais") %>% pull(pais)
+anti_join(mundial_2026, fase_grupos, by = "pais") %>% pull(pais)
+```
+
+`character(0)` en ambos significa que todos los países coinciden — podemos hacer el join.
+
+---
+
+# Parte 3: Unir las dos fuentes
+
+```{r}
+datos_modelo <- mundial_2026 %>%
+  left_join(fase_grupos, by = "pais")
+
+head(datos_modelo)
+```
+
+48 filas — una por selección. Tenemos las variables de Transfermarkt y los resultados de Wikipedia en un solo data frame.
+
+---
+
+# Parte 4: Transformaciones antes de modelar
+
+Antes de estimar, construimos variables más informativas:
+
+```{r}
+datos_modelo <- datos_modelo %>%
+  mutate(
+    # log del valor de mercado — la relación con puntos es probablemente no lineal
+    # el salto de 100 a 200 millones importa más que el de 1000 a 1100
+    log_valor = log(valor_mercado),
+
+    # log de participaciones — mismo argumento
+    # +1 para evitar log(0) en selecciones en su primer Mundial
+    log_part  = log(participaciones + 1)
+  ) %>%
+  group_by(grupo) %>%
+  mutate(
+    # fortaleza de rivales: valor de mercado promedio de los otros tres equipos del grupo
+    # (suma del grupo - valor propio) / 3
+    fortaleza_rivales = (sum(valor_mercado) - valor_mercado) / 3
+  ) %>%
+  ungroup()
+```
+
+---
+
+# Parte 5: El modelo
+
+```{r}
+modelo <- lm(Pts ~ log_valor + log_part + extranjero + fortaleza_rivales,
+             data = datos_modelo)
+
+summary(modelo)
+```
+
+El R² ajustado de 0.64 significa que el modelo explica el 64% de la variación en puntos — bastante bien para un modelo tan sencillo.
+
+Dos variables son significativas:
+
+- **Log(valor de mercado)**: más dinero, más puntos. Cada 1% de aumento en el valor de la plantilla se asocia con ~1.1 puntos más (en escala log).
+- **Log(participaciones)**: la experiencia mundialista importa independientemente del dinero. Un país que ha jugado más Mundiales tiende a rendir mejor.
+
+La fortaleza de los rivales tiene el signo correcto (negativo) pero no es estadísticamente significativa — en un torneo de 48 equipos con grupos de 4, la variación en la dificultad del grupo no es tan grande.
+
+---
+
+# Parte 6: Visualizaciones
+
+```{r}
+# corregir acento si es necesario
+datos_modelo <- datos_modelo %>%
+  mutate(pais = str_replace(pais, "^Mexico$", "México"))
+
+# ── Coeficiente plot ──────────────────────────────────────────────────────────
+
+p_coef <- tidy(modelo, conf.int = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    term = recode(term,
+      "log_valor"         = "Log(valor de mercado)",
+      "log_part"          = "Log(participaciones mundiales)",
+      "extranjero"        = "% jugadores en el extranjero",
+      "fortaleza_rivales" = "Valor de mercado de rivales"
+    ),
+    significativo = p.value < 0.05
+  ) %>%
+  ggplot(aes(x = estimate, y = reorder(term, estimate),
+             xmin = conf.low, xmax = conf.high,
+             color = significativo)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray70") +
+  geom_pointrange(linewidth = 1.2, size = 0.8) +
+  scale_color_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "gray70"),
+    labels = c("TRUE" = "Significativo (p < 0.05)",
+               "FALSE" = "No significativo")
+  ) +
+  labs(
+    title    = "¿Qué predice los puntos?",
+    subtitle = "R² ajustado = 0.64",
+    x        = "Coeficiente estimado (IC 95%)",
+    y        = NULL,
+    color    = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top", panel.grid.minor = element_blank())
+
+# ── Valores ajustados vs reales ───────────────────────────────────────────────
+
+datos_aug <- augment(modelo) %>%
+  mutate(pais = datos_modelo$pais)
+
+errores_grandes <- datos_aug %>% filter(abs(.resid) > 2)
+
+p_fit <- datos_aug %>%
+  ggplot(aes(x = .fitted, y = Pts)) +
+  geom_abline(slope = 1, intercept = 0,
+              color = "gray70", linetype = "dashed", linewidth = 0.8) +
+  geom_point(aes(color = abs(.resid) > 2), size = 3, alpha = 0.8) +
+  geom_text(data = errores_grandes,
+            aes(x = .fitted, y = Pts, label = pais),
+            size = 3.2, vjust = -0.8, color = "firebrick") +
+  scale_color_manual(
+    values = c("TRUE" = "firebrick", "FALSE" = "steelblue"),
+    labels = c("TRUE" = "Error > 2 puntos", "FALSE" = "Buen ajuste")
+  ) +
+  scale_y_continuous(limits = c(-1, 11)) +
+  scale_x_continuous(limits = c(-1, 9)) +
+  labs(
+    title    = "Reales vs predichos",
+    subtitle = "En rojo: error mayor a 2 puntos",
+    x        = "Puntos predichos",
+    y        = "Puntos reales",
+    color    = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top", panel.grid.minor = element_blank())
+
+# ── Combinar ──────────────────────────────────────────────────────────────────
+
+p_coef + p_fit +
+  plot_annotation(
+    title    = "Modelo de predicción de puntos — Mundial 2026",
+    subtitle = "Valor de mercado y experiencia son los factores clave",
+    caption  = "Fuente: Transfermarkt + Wikipedia",
+    theme    = theme(
+      plot.title    = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 11, color = "gray40")
+    )
+  )
+```
+

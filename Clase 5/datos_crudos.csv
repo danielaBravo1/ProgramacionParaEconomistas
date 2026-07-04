@@ -1,0 +1,49 @@
+pais,plantilla,edad_promedio,participaciones,extranjero,valor_mercado,valor_promedio,Pts,PJ,PG,PE,PP,GF,GC,Dif,grupo
+Francia,"27,1",17,"73,1 %",NA,58.58,NA,9,3,3,0,0,10,2,8,Grupo I
+Inglaterra,"27,4",17,"23,1 %",NA,52.24,NA,7,3,2,1,0,6,2,4,Grupo L
+España,"26,8",18,"30,8 %",NA,47.03,NA,7,3,2,1,0,5,0,5,Grupo H
+Portugal,"28,1",10,"80,8 %",NA,38.67,NA,5,3,1,2,0,6,1,5,Grupo K
+Alemania,"28,1",21,"30,8 %",NA,36.42,NA,6,3,2,0,1,10,4,6,Grupo E
+Brasil,"29,4",23,"73,1 %",NA,35.7,NA,7,3,2,1,0,7,1,6,Grupo C
+Argentina,"29,2",20,"88,5 %",NA,31.06,NA,9,3,3,0,0,8,1,7,Grupo J
+Países Bajos,"27,9",12,"92,3 %",NA,29.01,NA,7,3,2,1,0,10,4,6,Grupo F
+Noruega,"26,9",4,"84,6 %",NA,22.69,NA,6,3,2,0,1,8,7,1,Grupo I
+Bélgica,"27,7",15,"88,5 %",NA,21.06,NA,5,3,1,2,0,6,2,4,Grupo G
+Costa de Marfil,"25,9",4,"100,0 %",NA,20.08,NA,6,3,2,0,1,4,2,2,Grupo E
+Senegal,"27,2",4,"100,0 %",NA,18.39,NA,3,3,1,0,2,8,6,2,Grupo I
+Marruecos,"26,7",8,"92,3 %",NA,17.22,NA,7,3,2,1,0,6,3,3,Grupo C
+Suecia,"27,6",13,"88,5 %",NA,15.73,NA,4,3,1,1,1,7,7,0,Grupo F
+Croacia,"28,4",7,"96,2 %",NA,14.9,NA,6,3,2,0,1,5,5,0,Grupo L
+Estados Unidos,"27,0",12,"76,9 %",NA,14.83,NA,6,3,2,0,1,8,4,4,Grupo D
+Ecuador,"26,2",5,"92,3 %",NA,14.18,NA,4,3,1,1,1,2,2,0,Grupo E
+Suiza,"28,4",13,"92,3 %",NA,12.79,NA,7,3,2,1,0,7,3,4,Grupo B
+Colombia,"30,2",7,"96,2 %",NA,11.63,NA,7,3,2,1,0,4,1,3,Grupo K
+Japón,"27,6",8,"88,5 %",NA,10.42,NA,5,3,1,2,0,7,3,4,Grupo F
+Argelia,"26,6",5,"88,0 %",NA,10.08,NA,4,3,1,1,1,5,7,-2,Grupo J
+Austria,"28,7",9,"92,3 %",NA,9.43,NA,4,3,1,1,1,6,6,0,Grupo J
+Ghana,"27,1",5,"96,2 %",NA,9.01,NA,4,3,1,1,1,2,2,0,Grupo L
+Canadá,"27,1",3,"92,3 %",NA,7.64,NA,4,3,1,1,1,8,3,5,Grupo B
+México,"28,0",18,"53,8 %",NA,7.38,NA,9,3,3,0,0,6,0,6,Grupo A
+Paraguay,"29,1",10,"88,5 %",NA,5.91,NA,4,3,1,1,1,2,4,-2,Grupo D
+Bosnia-Herzegovina,"26,5",2,"96,2 %",NA,5.63,NA,4,3,1,1,1,5,6,-1,Grupo B
+República Democrática del Congo,"29,2",1,"100,0 %",NA,5.53,NA,4,3,1,1,1,4,3,1,Grupo K
+Egipto,"29,1",4,"34,6 %",NA,4.48,NA,5,3,1,2,0,5,3,2,Grupo G
+Australia,"27,4",7,"84,6 %",NA,2.98,NA,4,3,1,1,1,2,2,0,Grupo D
+Cabo Verde,"29,8",1,"100,0 %",NA,2.1,NA,3,3,0,3,0,2,2,0,Grupo H
+Sudáfrica,"26,9",4,"26,9 %",NA,1.89,NA,4,3,1,1,1,2,3,-1,Grupo A
+Turquía,"27,8",3,"42,3 %",NA,18.22,NA,3,3,1,0,2,3,5,-2,Grupo D
+Uruguay,"28,8",16,"100,0 %",NA,13.82,NA,2,3,0,2,1,3,4,-1,Grupo H
+Chequia,"27,7",2,"34,6 %",NA,7.24,NA,1,3,0,1,2,2,6,-4,Grupo A
+Escocia,"29,3",9,"69,2 %",NA,6.55,NA,3,3,1,0,2,1,4,-3,Grupo C
+Corea del Sur,"28,2",12,"73,1 %",NA,5.35,NA,3,3,1,0,2,2,3,-1,Grupo A
+Uzbekistán,"28,3",1,"38,5 %",NA,3.27,NA,0,3,0,0,3,2,11,-9,Grupo K
+Túnez,"26,7",7,"76,9 %",NA,2.69,NA,0,3,0,0,3,2,12,-10,Grupo F
+Haití,"27,6",2,"96,2 %",NA,2.15,NA,0,3,0,0,3,2,8,-6,Grupo C
+Arabia Saudita,"28,6",7,"3,8 %",NA,1.56,NA,2,3,0,2,1,1,5,-4,Grupo H
+Panamá,"30,5",2,"92,3 %",NA,1.33,NA,0,3,0,0,3,0,4,-4,Grupo L
+Nueva Zelanda,"28,4",3,"69,2 %",NA,1.32,NA,1,3,0,1,2,4,10,-6,Grupo G
+Irán,"30,4",7,"34,6 %",NA,1.23,NA,3,3,0,3,0,3,3,0,Grupo G
+Curazao,"28,1",1,"100,0 %",NA,NA,NA,1,3,0,1,2,1,9,-8,Grupo E
+Irak,"27,0",2,"65,4 %",NA,NA,NA,0,3,0,0,3,1,12,-11,Grupo I
+Jordania,"28,5",1,"57,7 %",NA,NA,NA,0,3,0,0,3,3,8,-5,Grupo J
+Catar,"29,6",2,"0,0 %",NA,NA,NA,1,3,0,1,2,2,10,-8,Grupo B

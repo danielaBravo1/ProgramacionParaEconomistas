@@ -1,0 +1,301 @@
+---
+title: "Clase 5: Ejercicios"
+author: "DanielaBravo"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "##",
+                      fig.width = 9, fig.height = 5)
+```
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(polite)
+```
+
+---
+
+# La pregunta
+
+¿Los países que más jugadores exportan al extranjero (en términos relativos a su población) son también los que mejor rinden en el Mundial?
+
+Para responderla necesitas construir un indicador: **jugadores en el extranjero por millón de habitantes**. Los jugadores en el extranjero los tienes de Transfermarkt. La población la vas a scrapear de Wikipedia.
+
+---
+
+# Paso 1 — Datos de Transfermarkt
+
+Ya hiciste este scraping en clase. Corre el código para tener `mundial_2026` disponible:
+
+```{r}
+url_tm <- "https://www.transfermarkt.es/weltmeisterschaft/teilnehmer/pokalwettbewerb/FIWC/saison_id/2025"
+
+sesion <- bow(url_tm, user_agent = "Mozilla/5.0 (compatible; estudiante/1.0)")
+pagina <- scrape(sesion)
+
+tablas <- pagina %>%
+  html_elements("table.items") %>%
+  html_table()
+
+limpiar_tabla_tm <- function(tabla) {
+  tabla %>%
+    janitor::clean_names() %>%
+    select(
+      pais            = club,
+      plantilla       = club_2,
+      edad_promedio   = plantilla,
+      participaciones = oslash_edad,
+      extranjero      = participaciones,
+      valor_mercado   = en_el_extranjero,
+      valor_promedio  = valor_de_mercado
+    ) %>%
+    mutate(pais = as.character(pais)) %>%
+    filter(!is.na(pais), pais != "Club")
+}
+
+mundial_2026 <- bind_rows(
+  limpiar_tabla_tm(tablas[[1]]),
+  limpiar_tabla_tm(tablas[[2]])
+) %>%
+  mutate(
+    extranjero = str_remove(extranjero, " %") %>%
+                 str_replace(",", ".") %>%
+                 as.numeric(),
+    plantilla  = as.integer(plantilla)
+  )
+
+head(mundial_2026 %>% select(pais, plantilla, extranjero), 5)
+```
+
+---
+
+# Paso 2 — Calcular jugadores en el extranjero
+
+La columna `extranjero` es el **porcentaje** de jugadores que juegan fuera de su país. La columna `plantilla` es el tamaño de la plantilla (siempre 26 en un Mundial).
+
+**Ejercicio 1.** Crea una columna `jugadores_extranjero` que sea el número absoluto de jugadores que juegan en ligas extranjeras. Guarda el resultado de vuelta en `mundial_2026`.
+
+$$\text{jugadores\_extranjero} = \frac{\text{extranjero} \times \text{plantilla}}{100}$$
+
+```{r}
+mundial_2026 <- mundial_2026 %>%
+  mutate(
+    jugadores_extranjero = (extranjero * plantilla) / 100
+  )
+
+head(mundial_2026)
+```
+
+---
+
+# Paso 3 — Scrapear la población de Wikipedia
+
+## 3a — Descargar el HTML
+
+```{r}
+url_wiki <- "https://es.wikipedia.org/wiki/Anexo:Pa%C3%ADses_y_territorios_dependientes_por_poblaci%C3%B3n"
+pagina_poblacion <- read_html(url_wiki)
+```
+
+## 3b — Encontrar la tabla
+
+**Ejercicio 2.** Extrae todas las tablas de la página con `html_elements("table.wikitable")` y `html_table()`. Guárdalas en `tablas_pob`. ¿Cuántas hay?
+
+```{r}
+tablas_pob <- pagina_poblacion %>%
+  html_elements("table.wikitable") %>%
+  html_table()
+
+length(tablas_pob)
+```
+
+## 3c — Explorar la estructura
+
+**Ejercicio 3.** Imprime los nombres de columnas de la primera tabla con `names()`.
+
+```{r}
+names(tablas_pob[[1]])
+```
+
+## 3d — El problema del espacio especial
+
+Antes de limpiar la población hay un problema técnico: los números vienen con un espacio especial de no separación (Unicode U+00A0) en vez del espacio normal. `"66 383 000"` parece tener espacios normales pero R no los reconoce al convertir a número.
+
+Puedes verificarlo con:
+
+```{r}
+tablas_pob[[1]] %>%
+  select(poblacion = `Proyecciónexponencialde lapoblaciónal1/7/2025[7]`) %>%
+  filter(str_detect(poblacion, "66")) %>%
+  pull(poblacion) %>%
+  .[1] %>%
+  utf8ToInt() %>%
+  head(10)
+# el número 160 = U+00A0 = espacio de no separación
+```
+
+Para quitarlos hay que usar `"\\s|\\u00A0"` en vez de solo `" "`.
+
+## 3e — El problema del nombre duplicado
+
+Los nombres de países vienen duplicados en Wikipedia: `"Francia Francia"`, `"Brasil Brasil"`. La estrategia más robusta: buscar los nombres que ya tenemos (los 48 países del Mundial) **dentro** de la columna sucia de Wikipedia.
+
+**Ejercicio 4.** El siguiente código limpia la tabla de población. Léelo con atención y escribe un comentario explicando qué hace cada parte:
+
+```{r}
+paises_mundial <- mundial_2026$pais
+
+poblacion <- tablas_pob[[1]] %>%
+  select(
+    pais_wiki = `País (o territorio dependiente)`,
+    poblacion = `Proyecciónexponencialde lapoblaciónal1/7/2025[7]`
+  ) %>%
+  mutate(
+    # ¿qué hace esta línea? 
+    poblacion = str_remove_all(poblacion, "\\s|\\u00A0") %>% as.numeric(),
+
+    # ¿qué hace map_chr aquí?
+    pais = map_chr(pais_wiki, function(x) {
+      # ¿qué hace esta línea?
+      match <- paises_mundial[str_detect(x, fixed(paises_mundial))]
+      # ¿por qué length(match) == 1 y no > 0?
+      if (length(match) == 1) match else NA_character_
+    })
+  ) %>%
+  filter(!is.na(pais), !is.na(poblacion)) %>%
+  group_by(pais) %>%
+  # ¿por qué slice_max y no slice_head?
+  slice_max(poblacion, n = 1) %>%
+  ungroup() %>%
+  select(pais, poblacion)
+
+nrow(poblacion)
+```
+
+*Escribe aquí tus comentarios explicando cada parte.*
+La línea de poblacion = str_remove, nos ayuda a eliminar todos los espacios, ya sean normales o no separables que aparecen en la columna de población y los arroja a valores númericos.
+
+El map_chr, nos ayuda a recorrer los valores de la columa "pais_wiki" y los devuelve en un texto con el nombre adecuado del país, o NA si no se encuentra coincidencia.
+
+La línea de match, sirve para buscar que nombre de país del mundial esta dentro del nombre del país de wikipedia, y nos ayuda a ver los casos en donde se repitan.
+
+El lenght lo utilizamos para aceptar los casos donde existe una sola coincidencia, en caso de haber más, se asigna NA para no tener errores.
+---
+
+# Paso 4 — Casos especiales
+
+**Ejercicio 5.** Usa `anti_join()` para ver qué países del Mundial no tienen pareja en `poblacion`. Completa el código:
+
+```{r}
+anti_join(mundial_2026, poblacion, by = "pais") %>% pull(pais)
+```
+
+Deberían faltar 4: **Inglaterra**, **Escocia**, **Chequia** y **Bosnia-Herzegovina**.
+
+- **Inglaterra y Escocia** no aparecen porque Wikipedia las lista bajo "Reino Unido". Son naciones distintas con selecciones propias, así que usamos sus poblaciones reales.
+- **Chequia** y **Bosnia-Herzegovina** sí están en Wikipedia pero con nombres distintos.
+
+**Ejercicio 6.** Busca cómo aparecen Chequia y Bosnia-Herzegovina en la tabla de Wikipedia. Completa el filtro:
+
+```{r}
+tablas_pob[[1]] %>%
+  select(pais_wiki = `País (o territorio dependiente)`) %>%
+  filter(str_detect(pais_wiki, "Checa|Bosnia")) %>%
+  pull(pais_wiki)
+```
+
+Ahora completa los valores faltantes de Chequia y Bosnia-Herzegovina buscándolos en `tablas_pob[[1]]` con el mismo método que usaste arriba, y comenta qué hace cada línea del código:
+
+```{r}
+# completa la población de Chequia
+pob_chequia <- tablas_pob[[1]] %>%
+  select(
+    pais_wiki = `País (o territorio dependiente)`,
+    poblacion = `Proyecciónexponencialde lapoblaciónal1/7/2025[7]`
+  ) %>%
+  mutate(poblacion = str_remove_all(poblacion, "\\s|\\u00A0") %>% as.numeric()) %>%
+  filter(str_detect(pais_wiki, "República Checa")) %>%   # completa el filtro
+  slice_max(poblacion, n = 1) %>%
+  pull(poblacion)
+
+# completa la población de Bosnia-Herzegovina
+pob_bosnia <- tablas_pob[[1]] %>%
+  select(
+    pais_wiki = `País (o territorio dependiente)`,
+    poblacion = `Proyecciónexponencialde lapoblaciónal1/7/2025[7]`
+  ) %>%
+  mutate(poblacion = str_remove_all(poblacion, "\\s|\\u00A0") %>% as.numeric()) %>%
+  filter(str_detect(pais_wiki, "Bosnia y Herzegovina")) %>%   # completa el filtro
+  slice_max(poblacion, n = 1) %>%
+  pull(poblacion)
+
+# unir los 4 casos faltantes
+faltantes <- tibble(
+  pais      = c("Inglaterra", "Escocia", "Chequia",   "Bosnia-Herzegovina"),
+  poblacion = c(56000000,     5500000,   pob_chequia, pob_bosnia)
+)
+
+# unir con la tabla principal y verificar
+poblacion <- bind_rows(poblacion, faltantes)
+anti_join(mundial_2026, poblacion, by = "pais") %>% pull(pais)
+```
+
+---
+
+# Paso 5 — Unir y calcular el indicador
+
+**Ejercicio 7.** Une `mundial_2026` con `poblacion` usando `left_join()`. Luego calcula el indicador y muestra el top 10:
+
+$$\text{jugadores\_per\_capita} = \frac{\text{jugadores\_extranjero}}{\text{poblacion} / 1{,}000{,}000}$$
+
+```{r}
+mundial_2026 <- mundial_2026 %>%
+  left_join(poblacion, by = "pais") %>%
+  mutate(
+    jugadores_per_capita = jugadores_extranjero / (poblacion / 1000000)
+  )
+
+mundial_2026 %>%
+  arrange(desc(jugadores_per_capita)) %>%
+  select(pais, jugadores_extranjero, poblacion, jugadores_per_capita) %>%
+  head(10)
+```
+
+---
+
+# Paso 6 — Visualizar
+
+**Ejercicio 8.** Haz una gráfica de barras horizontales con los 15 países con mayor indicador. Antes de escribir código, escribe:
+
+- ¿Qué tipo de países esperas ver arriba del ranking: grandes o pequeños? ¿Por qué?
+- ¿Tiene sentido económico que un país pequeño tenga un ratio más alto?
+
+*Tu respuesta aquí.*
+Esperaría encontrarme con países pequeños o de población "baja", ya que el indicador nos dice el número de jugadores que juegan en el extranjero por millón de habitantes. Si hay un país con pocos habitantes, se puede tener un valor muy alto si "produce" muchos futbolistas que jueguen en ligas del extranjero, por lo que un país grande o muy poblado, necesita exportar muchos más jugadores para alcanzar el mismo indicador.
+Esto sí tiene sentido económico, ya que los paises pequeños suelen tener merados drportivos más pequeños o ligas nacionales con menos recursos, por lo que los mejores jugadores buscan oportunidades en ligas extranjeras que pueden llegar a tener mejor campo. A parte de esto, al tener una población más pequeña, un número relativamente pequeño de futbolistas en el extranjero, representa un indicador muy alto al ser expresado por millón de habitantes.
+
+```{r}
+mundial_2026 %>%
+  arrange(desc(jugadores_per_capita)) %>%
+  slice_head(n = 15) %>%
+  mutate(pais = forcats::fct_reorder(pais, jugadores_per_capita)) %>%
+  ggplot(aes(x = pais, y = jugadores_per_capita)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top 15 países con más jugadores en el extranjero por millón de habitantes",
+    x = "País",
+    y = "Jugadores en el extranjero por millón de habitantes"
+  ) +
+  theme_minimal()
+```
+
+
